@@ -1,0 +1,151 @@
+---
+title: "Evilest of All"
+author: "Yun-Shiuan"
+format: 
+   html:
+    toc: true
+    toc-location: left
+    theme: superhero
+    dark: [darkly,theme-dark.scss]
+    font: font-family-sans-serif
+    highlight-style: ayu
+    fontcolor: YellowGreen
+    code-annotations: select
+    self-contained: true
+editor: visual
+---
+
+# Introduction
+
+I grew up with Disney. As a kid, girls around me all have a dream of becoming a princess, we play dress ups, pick out our favorite princess, and have princess tea parties. However, growing up I observed a major shift from dreaming of becoming a princess to a strong adoration towards villains. More and more villain merchandises have been pushed and promoted, and more and more enjoy these products. This trend peaked my interest in what are the charms behind these "evil"characters and how should Disney create another villain that will win the hearts of all again.
+
+# Methodology
+
+## Data set
+
+The resource I pick as my data set is Serena Valentino's villain series. The targeted readers were young adults, which are people at the age from 14 to 25, narrowing the observation group to those who started to spark interest towards villains more than princesses. Additionally, the series is top 1 bestselling in the category of Teen and Young Adult TV, Movie, Video Game Adaptations on Amazon, making it more creditable to look into. Through the series, each book focuses on a certain villain, narrating the back stories on how ordinary people have come to be the villains that they are today.
+
+## Approach
+
+### Scraping
+
+To have an in depth look into what people think about these stories, I have decided to scrape out reviews through 18 URLs regarding these series on GoodReads, which is an Amazon subsidiary. I applied BeautifulSoup and Playwright to scrape down the 18 URLs and the reviews. Through the scraping process, I discovered that GoodReads is scrapable, but the process needs to be fast or the site will detect, since setting a timesleep function did not work. Furthermore, while in the scraping process the webpage needs to be open and other sites cannot be open our the browser will detect it and jump to the next URL and start scraping. I believe there is more to learn about scraping GoodReads and more to discover the knacks of getting all the information on the page. In the end, through several attempts I have scrape down 8,670 reviews in total.
+
+### Analysis
+
+With over 8,000 reviews in hand, I first did a sentiment analysis, and discovered that over **80%** of the reviews have a positive perspective on the series. Therefore, I conducted a topic analysis and discovered she/her is the top mentioned words and following the other topics were female lead role names, which points out that audiences enjoys more of a story based on a female lead. In addition, digging into the reviews categorized by the topic, there is also an interesting discovery that audiences enjoy the back stories of the villains immensely and would want the whole narration of the story solely focus on such themes. Audiences also pointed out that they find author-created characters disturbs their reading flow and should be minimized. Through the topic analysis, it also shown that the top three most mentioned villains were Ursula, Cruella De Vil, and the Evil Queen.
+
+# Results
+
+Through these analysis it shows that young adults enjoy back stories of female leads extremely and if Disney would wish to create more stories of their villains they should prioritize a female lead and put in more detailed back stories of the process in how they turned into the villain that they are today. As for the three most discussed villains, I would want to scrape more information regarding them including their characteristics, back stories, and appearances and build a streamlit app that allows people to create their own villain through the variables collected from these three villains to gather more data for Disney in creating a new villain in the future. I really enjoyed doing the project and get to know more the characters that I have grow up with is a fun process to go though and I cannot wait to dive into more of it.
+
+[Well-structured presentation](https://drive.google.com/file/d/1VKMYLonjEQhKXiTGYCWsOT1D41khvLsz/view?usp=sharing)
+
+```{python}
+#FScrape all the URLs of all the villain series books
+from bs4 import BeautifulSoup
+import random
+import requests
+import pandas as pd
+import re
+
+link3= "https://www.goodreads.com/series/162322"
+
+session = requests.Session()
+#using various agents bc apparently goodreads has a scraping senser
+user_agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0)"]
+
+headers = {"User-Agent": random.choice(user_agents)}
+evil_req = session.get(link3, headers=headers)
+
+evil_soup = BeautifulSoup(evil_req.content, "html.parser")
+
+ID = evil_soup.find_all("a", href=True)
+ID_list = []
+for a in evil_soup.find_all("a", href=True):
+    if "/book/show/" in a["href"]:
+        full_link = "https://www.goodreads.com" + a["href"]
+        ID_list.append(full_link)
+for link in ID_list:
+    print(link)
+ID_list = [link.split("?")[0].rstrip("/") + "/reviews" 
+if "/reviews" not in link else link for link in ID_list]
+ID_df=pd.DataFrame(ID_list,columns=['ID'])
+ID_df=ID_df.drop_duplicates()
+
+
+#parcing out the names of the books from all the URLs scraped
+ID_pattern = re.compile(r'/book/show/\d+-([\w-]+)')
+names = [a.text.strip() for a in evil_soup.find_all('a', href=ID_pattern)]
+names_df= pd.DataFrame(names,columns=['Name'])
+
+evil_list = pd.concat([ID_df, names_df], axis=1)
+evil_list["Name"] = evil_list["Name"].shift(-evil_list["ID"].isna().sum())
+evil_list = evil_list.dropna()
+evil_list = evil_list.reset_index(drop=True)
+
+ID_list= list(dict.fromkeys(ID_list))
+ID_list
+
+```
+
+```{python}
+#| eval: false
+from playwright.sync_api import sync_playwright, Playwright
+import re
+import pandas as pd
+from tqdm import tqdm
+import numpy as np
+import time
+
+pw = sync_playwright().start()
+firefox = pw.firefox.launch(headless=False)
+page = firefox.new_page()
+
+def scrape_reviews(url):
+    #time.sleep(np.random.uniform(.25, .75, 1)[0])
+    page = firefox.new_page()
+    page.goto(url, timeout=90000)
+    reviews = []
+    
+    while page.locator("text='Show more reviews'"):
+        try:
+            page.locator("text='Show more reviews'").first.click()
+        except:
+            break
+    
+    review_elements = page.query_selector_all(".ReviewText")
+    for review in review_elements:
+        review_text= review.inner_text()
+        #review_text = review.inner_text()  # Extract the text content of each review
+        reviews.append(review_text)  # Append to the list
+    
+    return reviews  # Return the list of reviews
+
+evil_reviews = []
+for i in tqdm(ID_list, desc="Scraping Goodreads", unit="book"):
+    try:
+        name_row = evil_list.loc[evil_list['ID'] == i, 'Name']
+        name = name_row.values[0] if not name_row.empty else "Unknown"
+        comments = scrape_reviews(i)
+        
+        for comment in comments:
+            evil_reviews.append({"ID": i, "Name": name, "Comment": comment})
+            
+    except Exception as e:
+        print(f"Error scraping {i}: {e}")
+    
+villain_comments_df = pd.DataFrame(evil_reviews)
+
+
+page.close()
+firefox.close()
+pw.stop()
+
+#villain_comments_df.to_csv("villain_comments-24.csv", index=False)
+```
+
+[**Topic Analysis**](https://colab.research.google.com/drive/1ntoA_y9rsLVuKsKp2sCcCrmUU2k72hv6#scrollTo=sGRRzWSOxO0o)
